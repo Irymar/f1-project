@@ -11,7 +11,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: 🔐 Decode SSH key from EC2_KEY_B64
+      - name: 🔐 Decode SSH key from EC2_KEY_B64 (для shell)
         run: |
           echo "${{ secrets.EC2_KEY_B64 }}" | base64 -d > private.pem
           chmod 600 private.pem
@@ -21,8 +21,7 @@ jobs:
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY_B64 }}
-          key_format: base64
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             DEPLOY_DIR="/home/ubuntu/f1-store-deploy"
             echo "📁 Creating deploy dir if not exists..."
@@ -35,8 +34,7 @@ jobs:
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY_B64 }}
-          key_format: base64
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "infra/docker-compose.prod.yml"
           target: "/home/ubuntu/f1-store-deploy/"
           strip_components: 1
