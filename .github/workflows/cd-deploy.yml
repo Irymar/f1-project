@@ -1,9 +1,7 @@
-name: CD to EC2 and S3
+name: Deploy Docker Images to EC2 and S3
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -21,9 +19,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             DEPLOY_DIR="/home/ubuntu/f1-store-deploy"
-            echo "📁 Creating deploy dir..."
+            echo "📁 Creating deploy dir if not exists..."
             sudo mkdir -p $DEPLOY_DIR
-            echo "🧹 Removing old compose file..."
+            echo "🧹 Removing docker-compose.prod.yml if it is dir or file..."
             sudo rm -rf $DEPLOY_DIR/docker-compose.prod.yml
 
       - name: Upload docker-compose.prod.yml to EC2
@@ -48,23 +46,30 @@ jobs:
             echo "🔐 Writing .env file..."
             printf "%b" "${{ secrets.ENV_FILE }}" > .env
 
-            echo "🐳 Pulling latest Docker images..."
+            echo "🐳 Pulling Docker images..."
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-rds
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-redis
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-frontend
 
-            echo "🚀 Running containers..."
+            echo "🛑 Stopping existing containers..."
+            sudo docker-compose -f docker-compose.prod.yml down || true
+
+            echo "🗑️ Pruning unused containers..."
+            sudo docker container prune -f || true
+
+            echo "🚀 Running docker-compose..."
             sudo docker-compose -f docker-compose.prod.yml up -d --remove-orphans
 
-            echo "✅ Containers running:"
+            echo "🔎 Verifying running containers..."
             sudo docker ps
 
-            echo "🌐 Checking backend connection endpoint:"
+            echo "🌐 Checking if backend is alive..."
             curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/test_connection/
 
       - name: Upload frontend to S3
         run: |
           aws s3 sync ./frontend s3://${{ secrets.S3_BUCKET_NAME }} --delete
+          echo "📦 S3 contents:"
           aws s3 ls s3://${{ secrets.S3_BUCKET_NAME }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
