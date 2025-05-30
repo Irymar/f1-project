@@ -51,6 +51,12 @@ jobs:
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-redis
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-frontend
 
+            echo "🛑 Stopping existing containers..."
+            sudo docker-compose -f docker-compose.prod.yml down || true
+
+            echo "🗑️ Pruning unused containers..."
+            sudo docker container prune -f || true
+
             echo "🚀 Running docker-compose..."
             sudo docker-compose -f docker-compose.prod.yml up -d --remove-orphans
 
