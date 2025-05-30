@@ -18,7 +18,7 @@ services:
       - .env
 
   backend_rds:
-    image: yourdockerhub/f1-backend-rds
+    image: ivar26/f1-backend-rds
     ports:
       - "8000:8000"
     depends_on:
@@ -27,7 +27,7 @@ services:
       - .env
 
   backend_redis:
-    image: yourdockerhub/f1-backend-redis
+    image: ivar26/f1-backend-redis
     ports:
       - "8001:8001"
     depends_on:
@@ -36,7 +36,7 @@ services:
       - .env
 
   frontend:
-    image: yourdockerhub/f1-frontend
+    image: ivar26/f1-frontend
     ports:
       - "3000:80"
     env_file:
