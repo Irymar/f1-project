@@ -20,9 +20,9 @@ jobs:
           script: |
             DEPLOY_DIR="/home/ubuntu/f1-store-deploy"
             echo "📁 Creating deploy dir if not exists..."
-            mkdir -p $DEPLOY_DIR
+            sudo mkdir -p $DEPLOY_DIR
             echo "🧹 Cleaning old files..."
-            rm -rf $DEPLOY_DIR/*
+            sudo rm -rf $DEPLOY_DIR/*
 
       - name: Upload docker-compose.prod.yml to EC2
         uses: appleboy/scp-action@v0.1.3
@@ -35,41 +35,54 @@ jobs:
           strip_components: 1
 
       - name: Deploy containers on EC2
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > private.pem
+          chmod 600 private.pem
+
+          echo "📦 Sending ENV file + running compose"
+          ssh -o StrictHostKeyChecking=no -i private.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            set -e
             cd /home/ubuntu/f1-store-deploy
 
-            echo "🔐 Writing .env file from GitHub secret"
-            echo "${{ secrets.ENV_FILE }}" > .env
+            echo "🔐 Writing .env from secrets"
+            echo "${{ secrets.ENV_FILE }}" | sudo tee .env > /dev/null
 
             echo "🛑 Stopping old containers..."
-            docker-compose -f docker-compose.prod.yml down || true
+            sudo docker-compose -f docker-compose.prod.yml down || true
 
-            echo "🗑️ Pruning unused containers..."
-            docker container prune -f || true
+            echo "🗑️ Pruning..."
+            sudo docker container prune -f || true
 
-            echo "🐳 Pulling latest Docker images..."
-            docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-rds
-            docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-redis
-            docker pull ${{ secrets.DOCKER_USERNAME }}/f1-frontend
+            echo "🐳 Pulling images"
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-rds
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-redis
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-frontend
 
             echo "🚀 Starting new containers..."
-            docker-compose -f docker-compose.prod.yml up -d --remove-orphans
+            sudo docker-compose -f docker-compose.prod.yml up -d --remove-orphans
 
             echo "🌐 Testing connection"
             curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/test_connection/
+          EOF
 
-      - name: Invalidate CloudFront cache
-        if: ${{ secrets.CLOUDFRONT_DIST_ID != '' }}
-        uses: chetan/invalidate-cloudfront-action@v2
-        with:
-          distribution-id: ${{ secrets.CLOUDFRONT_DIST_ID }}
-          paths: '/*'
+      - name: Upload frontend to S3
+        run: |
+          aws s3 sync ./frontend s3://${{ secrets.S3_BUCKET_NAME }} --delete
+          echo "📦 S3 contents:"
+          aws s3 ls s3://${{ secrets.S3_BUCKET_NAME }}
         env:
-          AWS_REGION: 'eu-north-1'
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Invalidate CloudFront cache
+        if: env.CLOUDFRONT_DIST_ID != ''
+        uses: chetan/invalidate-cloudfront-action@v2
+        env:
+          CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        with:
+          distribution-id: ${{ env.CLOUDFRONT_DIST_ID }}
+          paths: '/*'
