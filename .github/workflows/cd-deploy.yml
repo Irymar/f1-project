@@ -23,32 +23,37 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            DEPLOY_DIR="/home/${{ secrets.EC2_USER }}/f1-store-deploy"
-            echo "📁 Creating deploy dir if not exists..."
-            mkdir -p $DEPLOY_DIR
-            echo "🧹 Cleaning old files..."
-            rm -rf $DEPLOY_DIR/*
+            sudo mkdir -p /home/${{ secrets.EC2_USER }}/f1-store-deploy
+            sudo rm -rf /home/${{ secrets.EC2_USER }}/f1-store-deploy/*
 
-      - name: 📄 Upload docker-compose.prod.yml to EC2
+      - name: 📄 Upload docker-compose.prod.yml to EC2 (temporary)
         uses: appleboy/scp-action@v0.1.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "infra/docker-compose.prod.yml"
-          target: "/home/${{ secrets.EC2_USER }}/f1-store-deploy/"
+          target: "/tmp/f1-store-upload/"
           strip_components: 1
+
+      - name: 🔁 Move uploaded files with sudo
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            sudo cp -r /tmp/f1-store-upload/* /home/${{ secrets.EC2_USER }}/f1-store-deploy/
+            sudo chown -R $USER:$USER /home/${{ secrets.EC2_USER }}/f1-store-deploy/
 
       - name: 🚀 Deploy containers via SSH
         run: |
           ssh -o StrictHostKeyChecking=no -i private.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             set -ex
-
             cd /home/${{ secrets.EC2_USER }}/f1-store-deploy
 
             echo "🔐 Writing .env from ENV_FILE"
             printf "%b" "${{ secrets.ENV_FILE }}" > .env
-            echo "✅ .env created"
 
             echo "🛑 Stopping old containers..."
             docker compose -f docker-compose.prod.yml down || true
