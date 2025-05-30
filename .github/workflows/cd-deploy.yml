@@ -26,7 +26,10 @@ jobs:
             fi
 
             echo "♻️ Removing old docker-compose.yml if exists..."
-            sudo rm -rf $DEPLOY_DIR/docker-compose.yml
+            # Видаляємо і файл, і директорію з такою назвою, якщо раптом сталася помилка
+            if [ -e "$DEPLOY_DIR/docker-compose.yml" ] || [ -d "$DEPLOY_DIR/docker-compose.yml" ]; then
+              sudo rm -rf $DEPLOY_DIR/docker-compose.yml
+            fi
 
       - name: SCP docker-compose to EC2
         uses: appleboy/scp-action@v0.1.3
