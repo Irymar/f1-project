@@ -36,31 +36,28 @@ jobs:
 
       - name: Deploy containers on EC2
         run: |
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > private.pem
-          chmod 600 private.pem
-
           echo "📦 Sending ENV file + running compose"
-          ssh -o StrictHostKeyChecking=no -i private.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i private.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
             set -e
-            cd /home/ubuntu/f1-store-deploy
-
+            cd /home/***/f1-store-deploy
+          
             echo "🔐 Writing .env from secrets"
-            echo "${{ secrets.ENV_FILE }}" | sudo tee .env > /dev/null
-
+            printf "%b" "${{ secrets.ENV_FILE }}" | sudo tee .env > /dev/null
+          
             echo "🛑 Stopping old containers..."
             sudo docker-compose -f docker-compose.prod.yml down || true
-
+          
             echo "🗑️ Pruning..."
             sudo docker container prune -f || true
-
+          
             echo "🐳 Pulling images"
-            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-rds
-            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-redis
-            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-frontend
-
+            sudo docker pull ***/f1-backend-rds
+            sudo docker pull ***/f1-backend-redis
+            sudo docker pull ***/f1-frontend
+          
             echo "🚀 Starting new containers..."
             sudo docker-compose -f docker-compose.prod.yml up -d --remove-orphans
-
+          
             echo "🌐 Testing connection"
             curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/test_connection/
           EOF
