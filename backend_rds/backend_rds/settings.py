@@ -20,6 +20,9 @@ DEBUG = True
 
 # Application definition
 
+
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",")
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
