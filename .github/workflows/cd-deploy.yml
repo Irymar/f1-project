@@ -1,7 +1,7 @@
 name: Deploy to EC2 and S3
 
 on:
-  workflow_dispatch:  # ручний запуск з кнопки
+  workflow_dispatch:  # ручний запуск
 
 jobs:
   deploy:
@@ -12,7 +12,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      ### 🔐 Підключення до EC2 та деплой через SSH
+      ### 🔐 Деплой на EC2
       - name: Deploy backend to EC2
         uses: appleboy/ssh-action@v0.1.10
         with:
@@ -21,13 +21,18 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /home/ubuntu/f1-store-main
+
+            echo "${{ secrets.ENV_FILE }}" > .env
+
             git pull origin main
+
             docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-rds
             docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-redis
             docker pull ${{ secrets.DOCKER_USERNAME }}/f1-frontend
+
             docker-compose -f docker-compose.yml up -d
 
-      ### ☁️ Завантаження frontend у S3
+      ### ☁️ Завантаження frontend до S3
       - name: Upload frontend to S3
         run: |
           aws s3 sync ./frontend s3://${{ secrets.S3_BUCKET_NAME }} --delete
