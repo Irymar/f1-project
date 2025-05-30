@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Byte-compiled files
+*.py[cod]
+*$py.class
+
+# Virtual environments
+env/
+venv/
+ENV/
+.venv/
+
+# Git
+.git/
+.gitignore
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# dotenv
+.env
+.env.*
+
+# Test reports
+coverage/
+htmlcov/
+.tox/
+.nox/
+.cache/
+.pytest_cache/
+
+# Node
+node_modules/
+
+# Docker build artifacts
+*.pid
+*.db
