@@ -8,65 +8,68 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout repo
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: 📝 Write .env file from secret
-        run: echo "${{ secrets.ENV_FILE }}" > .env
-
-      - name: 📤 Upload docker-compose.prod.yml and .env to EC2
-        uses: appleboy/scp-action@v0.1.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: |
-            infra/docker-compose.prod.yml
-            .env
-          target: /home/ubuntu/f1-store-deploy
-          strip_components: 1
-
-      - name: 🚀 Deploy containers on EC2
+      - name: Ensure deploy dir on EC2 exists and clean old config
         uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            set -e
+            DEPLOY_DIR="/home/ubuntu/f1-store-deploy"
+            echo "📁 Creating deploy dir if not exists..."
+            mkdir -p $DEPLOY_DIR
+            echo "🧹 Cleaning old files..."
+            rm -rf $DEPLOY_DIR/*
+
+      - name: Upload docker-compose.prod.yml to EC2
+        uses: appleboy/scp-action@v0.1.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "infra/docker-compose.prod.yml"
+          target: "/home/ubuntu/f1-store-deploy/"
+          strip_components: 1
+
+      - name: Deploy containers on EC2
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
             cd /home/ubuntu/f1-store-deploy
 
+            echo "🔐 Writing .env file from GitHub secret"
+            echo "${{ secrets.ENV_FILE }}" > .env
+
             echo "🛑 Stopping old containers..."
-            sudo docker-compose -f docker-compose.prod.yml down || true
+            docker-compose -f docker-compose.prod.yml down || true
 
             echo "🗑️ Pruning unused containers..."
-            sudo docker container prune -f || true
+            docker container prune -f || true
 
-            echo "🐳 Pulling Docker images..."
-            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-rds
-            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-redis
-            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-frontend
+            echo "🐳 Pulling latest Docker images..."
+            docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-rds
+            docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-redis
+            docker pull ${{ secrets.DOCKER_USERNAME }}/f1-frontend
 
-            echo "🚀 Running docker-compose..."
-            sudo docker-compose -f docker-compose.prod.yml up -d --remove-orphans
+            echo "🚀 Starting new containers..."
+            docker-compose -f docker-compose.prod.yml up -d --remove-orphans
 
-            echo "🌐 Testing backend connection..."
+            echo "🌐 Testing connection"
             curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/test_connection/
 
-      - name: ☁️ Upload frontend to S3
-        run: |
-          aws s3 sync ./frontend s3://${{ secrets.S3_BUCKET_NAME }} --delete
-          echo "📦 S3 contents:"
-          aws s3 ls s3://${{ secrets.S3_BUCKET_NAME }}
+      - name: Invalidate CloudFront cache
+        if: ${{ secrets.CLOUDFRONT_DIST_ID != '' }}
+        uses: chetan/invalidate-cloudfront-action@v2
+        with:
+          distribution-id: ${{ secrets.CLOUDFRONT_DIST_ID }}
+          paths: '/*'
         env:
+          AWS_REGION: 'eu-north-1'
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-
-      - name: 🔄 Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DIST_ID }} --paths "/*"
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
