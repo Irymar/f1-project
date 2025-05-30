@@ -8,28 +8,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: 📥 Checkout repository
         uses: actions/checkout@v3
 
-      - name: 🔐 Decode SSH key from EC2_KEY_B64 (для shell)
+      - name: 🔐 Decode SSH key from EC2_KEY_B64
         run: |
           echo "${{ secrets.EC2_KEY_B64 }}" | base64 -d > private.pem
           chmod 600 private.pem
 
-      - name: Ensure deploy dir on EC2 exists and clean old config
-        uses: appleboy/ssh-action@v0.1.10
+      - name: 📝 Create .env file from secret
+        run: |
+          echo "${{ secrets.ENV_FILE }}" > .env
+
+      - name: 📤 Upload .env to EC2
+        uses: appleboy/scp-action@v0.1.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            DEPLOY_DIR="/home/ubuntu/f1-store-deploy"
-            echo "📁 Creating deploy dir if not exists..."
-            sudo mkdir -p $DEPLOY_DIR
-            echo "🧹 Cleaning old files..."
-            sudo rm -rf $DEPLOY_DIR/*
+          source: ".env"
+          target: "/home/ubuntu/f1-store-deploy/"
 
-      - name: Upload docker-compose.prod.yml to EC2
+      - name: 📤 Upload docker-compose.prod.yml to EC2
         uses: appleboy/scp-action@v0.1.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -39,15 +39,12 @@ jobs:
           target: "/home/ubuntu/f1-store-deploy/"
           strip_components: 1
 
-      - name: Deploy containers on EC2
+      - name: 🚀 Deploy containers on EC2
         run: |
-          echo "📦 Sending ENV file + running compose"
-          ssh -o StrictHostKeyChecking=no -i private.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+          echo "📦 Running compose on EC2..."
+          ssh -o StrictHostKeyChecking=no -i private.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
             cd /home/ubuntu/f1-store-deploy
-
-            echo "🔐 Writing .env from secrets"
-            printf "%b" "${{ secrets.ENV_FILE }}" | sudo tee .env > /dev/null
 
             echo "🛑 Stopping old containers..."
             sudo docker-compose -f docker-compose.prod.yml down || true
@@ -63,6 +60,27 @@ jobs:
             echo "🚀 Starting new containers..."
             sudo docker-compose -f docker-compose.prod.yml up -d --remove-orphans
 
-            echo "🌐 Testing connection"
-            curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/test_connection/
+            echo "✅ Deployment complete"
           EOF
+
+      - name: 📤 Upload frontend to S3
+        run: |
+          aws s3 sync ./frontend s3://${{ secrets.S3_BUCKET_NAME }} --delete
+          echo "📦 S3 contents:"
+          aws s3 ls s3://${{ secrets.S3_BUCKET_NAME }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: ♻️ Invalidate CloudFront cache
+        if: env.CLOUDFRONT_DIST_ID != ''
+        uses: chetan/invalidate-cloudfront-action@v2
+        env:
+          CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DIST_ID }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        with:
+          distribution-id: ${{ env.CLOUDFRONT_DIST_ID }}
+          paths: '/*'
