@@ -19,9 +19,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             DEPLOY_DIR="/home/ubuntu/f1-store-deploy"
-            echo "📁 Ensuring deploy directory exists..."
+            echo "📁 Creating deploy dir if not exists..."
             sudo mkdir -p $DEPLOY_DIR
-            echo "♻️ Cleaning up previous compose file..."
+            echo "🧹 Removing docker-compose.prod.yml if it is dir or file..."
             sudo rm -rf $DEPLOY_DIR/docker-compose.prod.yml
 
       - name: Upload docker-compose.prod.yml to EC2
@@ -31,7 +31,8 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "infra/docker-compose.prod.yml"
-          target: "/home/ubuntu/f1-store-deploy/docker-compose.prod.yml"
+          target: "/home/ubuntu/f1-store-deploy/"
+          strip_components: 1
 
       - name: Deploy containers on EC2
         uses: appleboy/ssh-action@v0.1.10
