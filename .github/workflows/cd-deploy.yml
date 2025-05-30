@@ -1,7 +1,9 @@
-name: Deploy Docker Images to EC2 and S3
+name: CD to EC2 and S3
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   deploy:
@@ -19,9 +21,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             DEPLOY_DIR="/home/ubuntu/f1-store-deploy"
-            echo "📁 Creating deploy dir if not exists..."
+            echo "📁 Creating deploy dir..."
             sudo mkdir -p $DEPLOY_DIR
-            echo "🧹 Removing docker-compose.prod.yml if it is dir or file..."
+            echo "🧹 Removing old compose file..."
             sudo rm -rf $DEPLOY_DIR/docker-compose.prod.yml
 
       - name: Upload docker-compose.prod.yml to EC2
@@ -43,33 +45,26 @@ jobs:
           script: |
             cd /home/ubuntu/f1-store-deploy
 
-            echo "🔐 Creating .env file..."
-            echo "${{ secrets.ENV_FILE }}" | sudo tee .env > /dev/null
+            echo "🔐 Writing .env file..."
+            printf "%b" "${{ secrets.ENV_FILE }}" > .env
 
-            echo "🐳 Pulling Docker images..."
+            echo "🐳 Pulling latest Docker images..."
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-rds
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-redis
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-frontend
 
-            echo "🛑 Stopping existing containers..."
-            sudo docker-compose -f docker-compose.prod.yml down || true
-
-            echo "🗑️ Pruning unused containers..."
-            sudo docker container prune -f || true
-
-            echo "🚀 Running docker-compose..."
+            echo "🚀 Running containers..."
             sudo docker-compose -f docker-compose.prod.yml up -d --remove-orphans
 
-            echo "🔎 Verifying running containers..."
+            echo "✅ Containers running:"
             sudo docker ps
 
-            echo "🌐 Checking if backend is alive..."
+            echo "🌐 Checking backend connection endpoint:"
             curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/test_connection/
 
       - name: Upload frontend to S3
         run: |
           aws s3 sync ./frontend s3://${{ secrets.S3_BUCKET_NAME }} --delete
-          echo "📦 S3 contents:"
           aws s3 ls s3://${{ secrets.S3_BUCKET_NAME }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
