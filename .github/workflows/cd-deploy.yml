@@ -1,7 +1,7 @@
 name: Deploy to EC2 and S3
 
 on:
-  workflow_dispatch:  # ручний запуск
+  workflow_dispatch:  # ручний запуск з кнопки
 
 jobs:
   deploy:
@@ -12,7 +12,6 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      ### 🔐 Деплой на EC2
       - name: Deploy backend to EC2
         uses: appleboy/ssh-action@v0.1.10
         with:
@@ -20,19 +19,29 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /home/ubuntu/f1-store-main
+            PROJECT_DIR="/home/ubuntu/f1-store-main"
 
-            echo "${{ secrets.ENV_FILE }}" > .env
+            echo "🧼 Cleaning previous project if exists..."
+            if [ -d "$PROJECT_DIR" ]; then
+              sudo rm -rf $PROJECT_DIR
+            fi
 
-            git pull origin main
+            echo "📥 Cloning latest version..."
+            sudo git clone https://github.com/Irymar/f1-project.git $PROJECT_DIR
 
-            docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-rds
-            docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-redis
-            docker pull ${{ secrets.DOCKER_USERNAME }}/f1-frontend
+            cd $PROJECT_DIR
 
-            docker-compose -f docker-compose.yml up -d
+            echo "🔐 Creating .env from GitHub Secret..."
+            echo "${{ secrets.ENV_FILE }}" | sudo tee .env > /dev/null
 
-      ### ☁️ Завантаження frontend до S3
+            echo "🐳 Pulling Docker images..."
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-rds
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-backend-redis
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/f1-frontend
+
+            echo "🚀 Running docker-compose"
+            sudo docker-compose -f docker-compose.yml up -d
+
       - name: Upload frontend to S3
         run: |
           aws s3 sync ./frontend s3://${{ secrets.S3_BUCKET_NAME }} --delete
@@ -41,7 +50,6 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
-      ### ❄️ Інвалідація CloudFront кешу
       - name: Invalidate CloudFront cache
         run: |
           aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DIST_ID }} --paths "/*"
