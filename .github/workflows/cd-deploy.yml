@@ -45,7 +45,7 @@ jobs:
             cd /home/ubuntu/f1-store-deploy
 
             echo "🔐 Writing .env from secrets"
-            printf "%b" "${{ secrets.ENV_FILE }}" > .env
+            echo "${{ secrets.ENV_FILE }}" | sudo tee .env > /dev/null
 
             echo "🛑 Stopping old containers..."
             sudo docker-compose -f docker-compose.prod.yml down || true
